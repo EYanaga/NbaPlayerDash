@@ -188,19 +188,17 @@ def fetch_game_stats(mode="per_game"):
 
 if __name__ == "__main__":
     print("Starting ingestion...")
-    upsert(fetch_advanced_stats(),      "advanced_stats",      "player")
-    upsert(fetch_salaries(),            "salaries",            "player")
-    upsert(fetch_minutes(),             "minutes",             "player_name")
-    upsert(fetch_game_stats("per_game"), "player_game_stats_per_game", "player")
-    upsert(fetch_game_stats("per_36"),  "player_game_stats_per_36",  "player")
-    upsert(fetch_game_stats("per_100"), "player_game_stats_per_100", "player")
 
     print(os.getenv("DATABASE_URL"))
     CURRENT_YEAR = get_current_nba_season_year()
 
-    upsert(fetch_advanced_stats(), "advanced_stats", "player")
-    upsert(fetch_salaries(),       "salaries",       "player")
-    upsert(fetch_minutes(),        "minutes",        "player_name")
+    upsert(fetch_advanced_stats(),      "advanced_stats",      "player")
+    upsert(fetch_salaries(),            "salaries",            "player")
+    upsert(fetch_minutes(),             "minutes",             "player_name")
+
+    upsert(fetch_game_stats("per_game"), "player_game_stats_per_game", "player")
+    upsert(fetch_game_stats("per_36"),  "player_game_stats_per_36",  "player")
+    upsert(fetch_game_stats("per_100"), "player_game_stats_per_100", "player")
 
     print("Done ✓")
 
