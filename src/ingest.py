@@ -105,6 +105,7 @@ def fetch_salaries():
         salary_df["salary"].str.replace(r"[$,]", "", regex=True), errors="coerce"
     )
     salary_df.dropna(inplace=True)
+    salary_df.drop_duplicates(inplace=True)
     salary_df.reset_index(drop=True, inplace=True)
     return salary_df
 
@@ -130,10 +131,69 @@ def fetch_minutes():
     df_clean.dropna(inplace=True)
     return df_clean
 
+# ── fetch standard stats ────────────────────────────────────────────────────────────
+
+def fetch_game_stats(mode="per_game"):
+    urls = {
+        "per_game": "https://www.basketball-reference.com/leagues/NBA_2026_per_game.html",
+        "per_36":   "https://www.basketball-reference.com/leagues/NBA_2026_per_minute.html",
+        "per_100":  "https://www.basketball-reference.com/leagues/NBA_2026_per_poss.html",
+    }
+
+    # debug columns
+    # df = pd.read_html(urls[mode])[0]
+    # print(df.columns.tolist())
+
+    df = pd.read_html(urls[mode])[0]
+    df = df[df["Player"] != "Player"].copy()
+
+    # Handle traded player extra rows
+    # Find whichever team column exists
+    team_col = "Tm" if "Tm" in df.columns else "Team"
+
+    traded_players = df[df[team_col].str.contains(r"\dTM", na=False)]["Player"].unique()
+    df = df[
+        (df[team_col].str.contains(r"\dTM", na=False)) |
+        (~df["Player"].isin(traded_players))
+    ].reset_index(drop=True)
+
+    # Handle traded players
+    # traded_players = df[df["Tm"].str.contains(r"\dTM", na=False)]["Player"].unique()
+    # df = df[
+    #     (df["Tm"].str.contains(r"\dTM", na=False)) |
+    #     (~df["Player"].isin(traded_players))
+    # ].reset_index(drop=True)
+
+    # 2P% needs to be computed: (FG - 3P) / (FGA - 3PA)
+    for col in ["FG", "FGA", "3P", "3PA", "3P%", "FT%", "TRB", "AST", "PTS", "MP"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    df["2P%"] = (df["FG"] - df["3P"]) / (df["FGA"] - df["3PA"])
+
+    df = df[["Player", "MP", "PTS", "TRB", "AST", "3P%", "2P%", "FT%"]].rename(columns={
+        "Player": "player",
+        "MP":     "min",
+        "PTS":    "pts",
+        "TRB":    "reb",
+        "AST":    "ast",
+        "3P%":    "fg3_pct",
+        "2P%":    "fg2_pct",
+        "FT%":    "ft_pct",
+    })
+
+    df = df.dropna(subset=["player"]).reset_index(drop=True)
+    return df
+
 # ── run pipeline ──────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     print("Starting ingestion...")
+    upsert(fetch_advanced_stats(),      "advanced_stats",      "player")
+    upsert(fetch_salaries(),            "salaries",            "player")
+    upsert(fetch_minutes(),             "minutes",             "player_name")
+    upsert(fetch_game_stats("per_game"), "player_game_stats_per_game", "player")
+    upsert(fetch_game_stats("per_36"),  "player_game_stats_per_36",  "player")
+    upsert(fetch_game_stats("per_100"), "player_game_stats_per_100", "player")
 
     print(os.getenv("DATABASE_URL"))
     CURRENT_YEAR = get_current_nba_season_year()
@@ -143,3 +203,14 @@ if __name__ == "__main__":
     upsert(fetch_minutes(),        "minutes",        "player_name")
 
     print("Done ✓")
+
+# if __name__ == "__main__":
+#     print("Starting ingestion...")
+
+#     print(os.getenv("DATABASE_URL"))
+
+#     upsert(fetch_advanced_stats(), "advanced_stats", "player")
+#     upsert(fetch_salaries(),       "salaries",       "player")
+#     upsert(fetch_minutes(),        "minutes",        "player_name")
+
+#     print("Done ✓")

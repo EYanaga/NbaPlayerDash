@@ -10,7 +10,16 @@ def get_engine():
 @st.cache_data(ttl=3600)
 def load_metrics():
     engine = get_engine()
-    return pd.read_sql("SELECT * FROM player_metrics ORDER BY overall_value_rank", engine)
+    metrics       = pd.read_sql("SELECT * FROM player_metrics ORDER BY overall_value_rank", engine)
+    stats_per_game = pd.read_sql("SELECT * FROM player_game_stats_per_game", engine)
+    stats_per_36   = pd.read_sql("SELECT * FROM player_game_stats_per_36", engine)
+    stats_per_100  = pd.read_sql("SELECT * FROM player_game_stats_per_100", engine)
+    return metrics, stats_per_game, stats_per_36, stats_per_100
+
+# @st.cache_data(ttl=3600)
+# def load_metrics():
+#     engine = get_engine()
+#     return pd.read_sql("SELECT * FROM player_metrics ORDER BY overall_value_rank", engine)
 
 # ── page config ───────────────────────────────────────────────────────────────
 
@@ -19,7 +28,9 @@ st.title("NBA Player Contract Value Dashboard")
 
 # ── load data ─────────────────────────────────────────────────────────────────
 
-df = load_metrics()
+df, stats_per_game, stats_per_36, stats_per_100 = load_metrics()
+
+# df = load_metrics()
 
 # ── player selector ───────────────────────────────────────────────────────────
 
@@ -38,12 +49,51 @@ st.image(headshot_url)
 
 st.divider()
 
+# ── table 0: simple game stats ────────────────────────────────────────────────
+
+st.subheader("Box Stats")
+
+stat_mode = st.selectbox(
+    "View stats as",
+    options=["Per Game", "Per 36 Minutes", "Per 100 Possessions"],
+    key="stat_mode"
+)
+
+stat_map = {
+    "Per Game":             stats_per_game,
+    "Per 36 Minutes":       stats_per_36,
+    "Per 100 Possessions":  stats_per_100,
+}
+
+selected_stats = stat_map[stat_mode]
+player_stats = selected_stats[selected_stats["player"] == player]
+
+if not player_stats.empty:
+    stats_display = pd.DataFrame({
+        "MIN":  [player_stats["min"].values[0]],
+        "PTS":  [player_stats["pts"].values[0]],
+        "REB":  [player_stats["reb"].values[0]],
+        "AST":  [player_stats["ast"].values[0]],
+        "3P%":  [player_stats["fg3_pct"].values[0]],
+        "2P%":  [player_stats["fg2_pct"].values[0]],
+        "FT%":  [player_stats["ft_pct"].values[0]],
+    }).round(3)
+
+    if stat_mode != "Per Game":
+        stats_display = stats_display.drop(columns=["MIN"])
+
+    st.dataframe(stats_display, hide_index=True, width='content')
+else:
+    st.write("No stats available for this player.")
+    
+st.divider()
+
 # ── table 1: advanced stats ───────────────────────────────────────────────────
 
 st.subheader("Advanced Stats")
 
 advanced = pd.DataFrame({
-    "MINUTES PER GAME":  [player_row["min"]],
+    # "MINUTES PER GAME":  [player_row["min"]],
     "PER":  [player_row["per"]],
     "BPM":  [player_row["bpm"]],
     "VORP": [player_row["vorp"]],
@@ -144,10 +194,7 @@ st.dataframe(
 
 # Comparison table
 
-# Select columns to round (all numeric except VORP/$ and WS/$)
-cols_to_round = ["MIN", "Salary", "VORP", "WS", "BPM", "PER"]
-
-comp_display = comp_local[[
+comp_display = comp_with_selected[[
     "player", "min", "salary", "vorp", "ws", "bpm", "per",
     "vorp_per_dollar", "ws_per_dollar", "local_value_rank"
 ]].rename(columns={
@@ -164,10 +211,24 @@ comp_display = comp_local[[
 }).sort_values("Local Value Rank")
 
 # Round only the desired columns
+cols_to_round = ["MIN", "Salary", "VORP", "WS", "BPM", "PER"]
 comp_display[cols_to_round] = comp_display[cols_to_round].round(2)
 
 comp_display["Salary"] = comp_display["Salary"].apply(lambda x: f"${x:,.0f}")
 
-st.dataframe(comp_display, hide_index=True, width="stretch")
+# Highlight the selected player
+##ed4585, #2e4057
+def highlight_selected(row, player_name):
+    if row["Player"] == player_name:
+        return ["background-color: #ed4585; color: white"] * len(row)
+    return [""] * len(row)
+
+styled_comp_display = comp_display.style.apply(
+    highlight_selected,
+    player_name=player,
+    axis=1
+)
+
+st.dataframe(styled_comp_display, hide_index=True, width="stretch")
 
 st.caption("All statistics are for the current NBA season. Data updated daily at 1am PST")
