@@ -4,6 +4,7 @@ from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 from urllib.request import urlopen, Request
 from bs4 import BeautifulSoup
+from datetime import datetime
 
 load_dotenv()
 
@@ -21,10 +22,22 @@ def upsert(df: pd.DataFrame, table: str, conflict_column: str):
     df.to_sql(table, engine, if_exists="append", index=False)
     print(f"✓ {table}: {len(df)} rows written")
 
+def get_current_nba_season_year(date_obj=None):
+    if date_obj is None:
+        date_obj = datetime.now()
+        
+    # The NBA season typically starts in October (Month 10).
+    # If we are in October, November, or December, the season 
+    # wraps up in the *following* calendar year.
+    if date_obj.month >= 10:
+        return date_obj.year + 1
+    else:
+        return date_obj.year
+
 # ── fetch advanced stats ──────────────────────────────────────────────────────
 
 def fetch_advanced_stats():
-    url = "https://www.basketball-reference.com/leagues/NBA_2026_advanced.html"
+    url = f"https://www.basketball-reference.com/leagues/NBA_{CURRENT_YEAR}_advanced.html"
 
     req = Request(url, headers={"User-Agent": "python-urllib/3.11"})
     html = urlopen(req).read()
@@ -98,7 +111,7 @@ def fetch_salaries():
 # ── fetch minutes ─────────────────────────────────────────────────────────────
 
 def fetch_minutes():
-    url = "https://www.basketball-reference.com/leagues/NBA_2026_per_game.html"
+    url = f"https://www.basketball-reference.com/leagues/NBA_{CURRENT_YEAR}_per_game.html"
     df = pd.read_html(url)[0]
 
     # Remove repeated header rows
@@ -123,6 +136,7 @@ if __name__ == "__main__":
     print("Starting ingestion...")
 
     print(os.getenv("DATABASE_URL"))
+    CURRENT_YEAR = get_current_nba_season_year()
 
     upsert(fetch_advanced_stats(), "advanced_stats", "player")
     upsert(fetch_salaries(),       "salaries",       "player")
